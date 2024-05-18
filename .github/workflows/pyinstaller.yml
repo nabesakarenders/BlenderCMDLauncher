@@ -1,9 +1,6 @@
 name: Build App
 run-name: Build App on push
-on:
-  push:
-    branches:
-      - release
+on: workflow_dispatch
 jobs:
   pyinstaller-build:
     runs-on: windows-latest
