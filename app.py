@@ -1,5 +1,4 @@
 import re
-import subprocess
 import sys
 
 from PyQt6.QtCore import QSettings, Qt, pyqtSignal, QProcess
