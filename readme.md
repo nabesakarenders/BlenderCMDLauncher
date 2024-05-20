@@ -3,6 +3,9 @@
 
 A small portable application to launcher Blender in 'headless' mode for rendering single frames or animations without the overhead of the viewport.
 
+## IMPORTANT
+
+The exe is currently being flagged by some anti-virus programs (like Windows Defender) because... I have no idea. The app is literally just a single python file and PyQt6. Probably PyInstaller being flagged because reasons. Either trust it or don't, I'll do what I can to resolve the false positives when I have time.
 
 ## Installation
 
