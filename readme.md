@@ -5,7 +5,7 @@ A small portable application to launch Blender in 'headless' mode for rendering 
 
 ## IMPORTANT
 
-The exe is currently being flagged by some anti-virus programs (like Windows Defender) because... I have no idea. The app is literally just a single python file and PyQt6. Probably PyInstaller being flagged because reasons. Either trust it or don't, I'll do what I can to resolve the false positives when I have time.
+Swapped to Nuitka to hopefully prevent issues with anti-virus flagging. It doesn't get flagged on my PC by Windows Defender or Bitdefender, but some still seem flag it. I don't have the money to sign such a small app so you can download the release or clone this repo and `pip install -r requirements.txt` and then `python app.py`.
 
 ## Installation
 
@@ -22,3 +22,17 @@ Grab from the releases page and place somewhere memorable. The app is portable a
 - Warnings about options that cannot be specified from the UI and are taken from the Blend File
 - Soon™
 
+## Changelog
+
+- v0.1.0
+    - Initial release
+- v0.1.1
+    - Font fixes
+    - remaining time fixes
+- v0.2.0
+    - Nearly a year later!
+    - Swap to Nuitka for building
+    - Add Final Completion Time Estimation for animation rendering
+    - Change Render button to Cancel button while rendering
+    - Lock fields when rendering
+    - Code improvements 

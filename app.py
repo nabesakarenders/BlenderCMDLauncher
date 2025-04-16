@@ -563,7 +563,7 @@ class MainWindow(QMainWindow):
                 if estimated_remaining_sec >= 0:
                     eta_str = str(timedelta(seconds=int(estimated_remaining_sec)))
                     avg_str = f"{avg_time_per_frame:.2f}"
-                    self.estimation_label.setText(f'Estimated Remaining: {eta_str} ({self._completed_frames}/{self._total_frames_in_job} frames @ {avg_str}s avg)')
+                    self.estimation_label.setText(f'Estimated Time Remaining: {eta_str} ({self._completed_frames}/{self._total_frames_in_job} frames @ {avg_str}s avg)')
                 else:
                     # Handle case where calculation might be slightly off at the very end
                     self.estimation_label.setText('Estimated Time Remaining: [Finishing...]')
