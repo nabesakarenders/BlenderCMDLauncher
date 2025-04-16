@@ -1,5 +1,7 @@
 import re
 import sys
+import time
+from datetime import timedelta
 
 from PyQt6.QtCore import QSettings, Qt, pyqtSignal, QProcess
 from PyQt6.QtGui import QFontDatabase, QFont, QPalette, QColor
@@ -17,7 +19,14 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__()
 
         # Track Blender Process run status
-        self.process = None;
+        self.process = None
+
+        # Setup time tracking for time remaining estimation
+        self._render_start_time = None
+        self._frame_times = []
+        self._total_frames_in_job = 0
+        self._completed_frames = 0
+        self._is_animation_job = False
 
         # Create main layout container
         container = QVBoxLayout()
@@ -36,6 +45,7 @@ class MainWindow(QMainWindow):
         container.addLayout(self.createConsoleHeader())
         container.addLayout(self.createConsoleLog())
         container.addLayout(self.createRemainingTime())
+        container.addLayout(self.createEstimationDisplay())
 
         # Setup Central Widget
         widget = QWidget()
@@ -44,8 +54,23 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Blender CMD Launcher")
         self.setFixedSize(750, 750)
 
+        self._widgets_to_disable_during_render = [
+            self.blender_path, self.blender_path_button,
+            self.blend_path, self.blend_path_button,
+            self.is_animation,
+            self.solo_frame_label, self.solo_frame,
+            self.start_frame_label, self.start_frame,
+            self.end_frame_label, self.end_frame,
+            self.renderer, self.render_api, self.use_cpu,
+            self.output_folder, self.output_folder_button,
+            self.output_filename
+            # Add extra UI elements to disable while rendering here
+        ]
+
         # Load any saved settings
         self.loadSettings()
+
+        self._set_ui_rendering_state(False)
 
     def createPathsHeader(self):
         container = QHBoxLayout()
@@ -289,6 +314,16 @@ class MainWindow(QMainWindow):
 
         return container
     
+    def createEstimationDisplay(self):
+        container = QHBoxLayout()
+        container.setContentsMargins(5, 5, 5, 20)
+        self.estimation_label = QLabel()
+        self.estimation_label.setText('Estimated Time Remaining: [Waiting for first frame]')
+        self.estimation_label.setStyleSheet("font-weight: bold; font-size: 13pt;")
+        container.addWidget(self.estimation_label)
+        return container
+
+    
     def createRemainingTime(self):
         container = QHBoxLayout()
         container.setContentsMargins(5, 20, 5, 20)
@@ -375,10 +410,20 @@ class MainWindow(QMainWindow):
 
     def runRenderCommand(self):
 
+        # Probably not needed anymore but kept for posterity
         # If Blender is already running don't try to run it again
-        if self.process is not None:
-            QMessageBox.warning(self, "Blender Running!", "Blender is already running. Check the log box and wait for it to finish!")
-            return False
+        # if self.process is not None:
+        #     QMessageBox.warning(self, "Blender Running!", "Blender is already running. Check the log box and wait for it to finish!")
+        #     return False
+
+        # Reset estimation variables
+        self._render_start_time = time.time()
+        self._frame_times = []
+        self._total_frames_in_job = 0
+        self._completed_frames = 0
+        self._is_animation_job = self.is_animation.isChecked()
+        self.estimation_label.setText('Estimated Time Remaining: [Waiting for first frame...]')
+        self.remaining_time.setText('Time Remaining: [Calculating...]')
 
         # Paths
         blender_path = self.blender_path.text()
@@ -398,15 +443,19 @@ class MainWindow(QMainWindow):
             if animation and (start_frame is None or end_frame is None):
                 QMessageBox.warning(self, "Error", "Please enter a start and end frame")
                 return False
+            self._total_frames_in_job = end_frame - start_frame + 1
         else:
             # Must be since frame render
             solo_frame = self.solo_frame.value()
             if solo_frame is None:
                 QMessageBox.warning(self, "Error", "Please enter a frame to render")
                 return False
+            self._total_frames_in_job = 1
         
         # Renderer
         renderer = self.renderer.currentText().upper()
+        renderer_api = ""
+        use_cpu = False
         if renderer == "CYCLES":
             renderer_api = self.render_api.currentText().upper()
             if renderer_api != "CPU":
@@ -437,43 +486,111 @@ class MainWindow(QMainWindow):
                 renderer_api += "+CPU"
             command.extend(["--", "--cycles-device", renderer_api])
         
-        print(command)
+        print("Starting Blender with command:", command)
 
-        self.addToLog("Running Blender...")
+        self.addToLog(f"Starting Blender render... Total frames: {self._total_frames_in_job}")
+
+        # Set UI to rendering state
+        self._set_ui_rendering_state(True)
+
         self.process = QProcess()
         self.process.readyReadStandardOutput.connect(self.handleStdout)
         self.process.readyReadStandardError.connect(self.handleStderr)
         self.process.stateChanged.connect(self.handleState)
-        self.process.finished.connect(self.runRenderCommandFinished)
+        self.process.finished.connect(lambda exitCode, exitStatus: self.runRenderCommandFinished(exitCode, exitStatus))
         self.process.start(blender_path, command)
 
-        # process = subprocess.run(command, stdout=subprocess.PIPE, text=True)
+        if not self.process.waitForStarted(5000):
+            self.addToLog("!!! Blender process failed to start! Check Blender path and permissions")
+            QMessageBox.critical(self, "Process Error", "Failed to start the Blender process. Check the log!")
+            self._set_ui_rendering_state(False)
+            self.process = None
+            return
+        
+    def cancelRenderCommand(self):
+        """Attempts to terminate the currently running Blender process"""
+        if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
+            self.addToLog("--- Attempting to cancel render... ---")
+            reply = QMessageBox.question(self, 'Cancel Render', "Are you sure you want to cancel the current render? Blender will not close nicely while rendering, this will force close Blender.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
 
-        # for line in process.stdout:
-        #     print(line, end="")
-
-        # if process.returncode == 0:
-        #     QMessageBox.information(self, "Success", "Rendering complete!")
-        # else:
-        #     QMessageBox.critical(self, "Error", "Rendering failed! Check log for errors.")
+            if reply == QMessageBox.StandardButton.Yes:
+                self.addToLog("--- User confirmed cancellation. Terminating Blender process... ---")
+                self.process.kill()
+            else:
+                self.addToLog("--- User aborted cancellation... ---")
+        else:
+            self.addToLog("--- Cancel requested, but no Blender process running ---")
+            if not self.process:
+                self._set_ui_rendering_state(False)
     
     def handleStdout(self):
         data = self.process.readAllStandardOutput()
-        stdout = bytes(data).decode("utf8")
+        stdout = bytes(data).decode("utf8", errors='ignore')
         remainingTime = self.extractRemainingTime(stdout)
-        if remainingTime:
-            self.updateRemainingTime(remainingTime)
-
-        self.addToLog(stdout)
+        # Process line by line for better parsing
+        for line in stdout.splitlines():
+            self.addToLog(line) # Log the raw line
+            self._process_output_line(line) # Process for estimates
 
     def handleStderr(self):
         data = self.process.readAllStandardError()
-        stderr = bytes(data).decode("utf8")
-        remainingTime = self.extractRemainingTime(stderr)
-        if remainingTime:
-            self.updateRemainingTime(remainingTime)
+        stderr = bytes(data).decode("utf8", errors='ignore')
+         # Process line by line for better parsing
+        for line in stderr.splitlines():
+            self.addToLog(line) # Log the raw line
+            self._process_output_line(line) # Process for estimates
 
-        self.addToLog(stderr)
+    def _process_output_line(self, line):
+        """Processes a line of output for Blender info and updates estimates."""
+        # --- Try to match the final frame time line FIRST ---
+        frame_time_match = re.search(r"^Time:\s*([\d:.]+)\s*\(Saving:\s*[\d:.]+\)$", line)
+        if frame_time_match and self._is_animation_job and self._total_frames_in_job > 1:
+            frame_time_str = frame_time_match.group(1) # Get the captured total time
+            frame_time_sec = self._parse_blender_time_to_seconds(frame_time_str)
+
+            if frame_time_sec is not None and frame_time_sec > 0:
+                self._frame_times.append(frame_time_sec)
+                self._completed_frames = len(self._frame_times)
+
+                # Calculate Average Time
+                avg_time_per_frame = sum(self._frame_times) / self._completed_frames
+
+                # Calculate estimated remaining time
+                remaining_frames = self._total_frames_in_job - self._completed_frames
+                estimated_remaining_sec = avg_time_per_frame * remaining_frames
+
+                # Format the time for humans
+                if estimated_remaining_sec >= 0:
+                    eta_str = str(timedelta(seconds=int(estimated_remaining_sec)))
+                    avg_str = f"{avg_time_per_frame:.2f}"
+                    self.estimation_label.setText(f'Estimated Remaining: {eta_str} ({self._completed_frames}/{self._total_frames_in_job} frames @ {avg_str}s avg)')
+                else:
+                    # Handle case where calculation might be slightly off at the very end
+                    self.estimation_label.setText('Estimated Time Remaining: [Finishing...]')
+
+                self.addToLog(f"--- Detected Frame Time: {frame_time_sec:.2f}s ---")
+            return # We've processed this line, no need to check for "Remaining:"
+
+        # --- If it wasn't the frame time line, check for "Remaining:" ---
+        remaining_time_blender = self.extractRemainingTime(line)
+        if remaining_time_blender: # Check if not None or empty
+            try:
+                # Keep your existing logic for displaying Blender's remaining time
+                display_time = remaining_time_blender
+                if ':' in remaining_time_blender and '.' in remaining_time_blender:
+                     # Attempt to remove milliseconds for cleaner display if present
+                     parts = remaining_time_blender.split('.')
+                     if len(parts) > 1 and len(parts[-1]) > 0: # Check if there's something after '.'
+                         display_time = parts[0]
+
+                self.updateRemainingTime(f"{display_time} (Reported by Blender)")
+            except Exception as e:
+                 self.addToLog(f"Error processing Blender remaining time: {e}")
+                 self.updateRemainingTime(f"{remaining_time_blender} (Reported by Blender)") # Fallback
+        elif "Fra:" in line and "Remaining:" not in line and not frame_time_match:
+             # If we see frame progress but no remaining time AND it wasn't the final frame time line,
+             # clear the Blender time estimate.
+             self.updateRemainingTime("[Calculating...]")          
 
     def handleState(self, state):
         states = {
@@ -484,25 +601,98 @@ class MainWindow(QMainWindow):
         stateReadableName = states[state]
         self.addToLog(f"State Changed: {stateReadableName}")
     
-    def runRenderCommandFinished(self):
-        self.addToLog("Blender Exited. Check above for more details.")
+    def runRenderCommandFinished(self, exitCode, exitStatus):
+        self.addToLog("Blender Process Exited.")
+        end_time = time.time()
+        total_duration_sec = end_time - self._render_start_time if self._render_start_time else 0
+        total_duration_str = str(timedelta(seconds=int(total_duration_sec)))
+
+        final_log_message = f"Render finished. Total time: {total_duration_str}."
+
+        was_cancelled = exitStatus == QProcess.ExitStatus.NormalExit and exitCode != 0
+
+        if exitStatus == QProcess.ExitStatus.NormalExit and exitCode == 0:
+            final_log_message += " (Completed Successfully)"
+            self.estimation_label.setText(f'Finished! Total time: {total_duration_str}')
+            self.remaining_time.setText("Time Remaining: [Render Complete]")
+        elif was_cancelled or "Terminating process" in self.log_text.toPlainText().splitlines()[-5:]:
+            final_log_message += f" (Cancelled by user. Exit code: {exitCode})"
+            self.estimation_label.setText(f'Render Canclled! Total time: {total_duration_str}')
+            self.remaining_time.setText("Time Remaining: [Render Cancelled]")
+            QMessageBox.information(self, "Render Cancelled", f"Render process was cancelled by the user.")
+        else:
+            final_log_message += f" (Exited with status: {exitStatus}, code: {exitCode})"
+            self.estimation_label.setText(f'Finished (Possible Errors). Total time: {total_duration_str}')
+            self.remaining_time.setText("Time Remaining: [Render Finished/Error]")
+            QMessageBox.warning(self, "Render Finished", f"Blender process finished, but maybe with errors (Exit Code: {exitCode}). Check the log.")
+
+        self.addToLog(final_log_message)
+
         self.process = None
-        self.updateRemainingTime("Time Remaining: [Waiting for Render Start]")
+        self._set_ui_rendering_state(False)
+
+        self._render_start_time = None
+        self._is_animation_job = False
 
     def addToLog(self, s):
         self.log_text.appendPlainText(s)
 
     def updateRemainingTime(self, t):
-        self.remaining_time.setText(f"Time Remaining: {t}")
+        if t is not None:
+            self.remaining_time.setText(f"Time Remaining: {t}")
 
     def extractRemainingTime(self, output):
-        remainingRe = r"Remaining:([\d:]+\.\d+)\s*\|"
-        m = re.search(remainingRe, output)
-        if m:
-            remainingTime = m.group(1)
-            return remainingTime
+        patterns = [
+            r"Remaining:([\d:.]+)",            # Common pattern
+            r"Remaining: ([\d.:]+)\s*\|",      # Alternative with space and pipe
+            r"Rendered \d+/\d+, Remaining: ([\d.:]+)" # Another variation
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, output)
+            if m:
+                return m.group(1).strip()
+        return None
+        
+    def _parse_blender_time_to_seconds(self, time_str):
+        """Converts Blender time string (HH:MM:SS.ms or MM:SS.ms) to seconds"""
+        parts = time_str.split(':')
+        try:
+            if len(parts) == 3: # HH:MM:SS.ms
+                h, m, s = map(float, parts)
+                return h * 3600 + m * 60 + s
+            elif len(parts) == 2: # MM:SS.ms
+                m, s = map(float, parts)
+                return m * 60 + s
+            elif len(parts) == 1: # SS.ms
+                s = float(parts[0])
+                return s
+            else:
+                raise None
+        except ValueError:
+            print(f"Warning: Could not parse time string: {time_str}")
+            return None
+    
+    def _set_ui_rendering_state(self, is_rendering):
+        """Enabled/Disables UI elements based on rendering status"""
+        try:
+            self.render_button.clicked.disconnect()
+        except TypeError:
+            pass
+
+        if is_rendering:
+            self.render_button.setText("Cancel Render")
+            self.render_button.clicked.connect(self.cancelRenderCommand)
+            for widget in self._widgets_to_disable_during_render:
+                widget.setEnabled(False)
         else:
-            return "Unknown"
+            self.render_button.setText("Render Now")
+            self.render_button.clicked.connect(self.runRenderCommand)
+            for widget in self._widgets_to_disable_during_render:
+                widget.setEnabled(True)
+            self.showAnimationOptions(self.is_animation.checkState())
+            self.canDisplayRenderApi(self.renderer.currentIndex())
+            self.canDisplayCpuOption(self.render_api.currentIndex())
+
     
 
 class ClickableLineEdit(QLineEdit):
