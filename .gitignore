@@ -1,4 +1,41 @@
+# Custom
 test.py
 BlenderCMD.ini
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+env/
+venv/
+*.egg-info/
+.eggs/
 dist/
 build/
+*.manifest
+*.spec
+
+# Nuitka output
+*.build
+*.exe
+*.dll
+*.o
+*.pyd
+*.so
+*.log
+*.dist
+*.onefile-build
+
+# macOS/Linux
+.DS_Store
+*.dSYM/
+*.app/
+
+# Windows
+Thumbs.db
+
+# VSCode / PyCharm
+.vscode/
+.idea/

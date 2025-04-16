@@ -1,0 +1,1 @@
+nuitka --standalone --onefile --enable-plugin=pyqt6 --include-data-dir=resources=resources --windows-icon-from-ico=nabesaka_icon.png app.py
