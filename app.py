@@ -689,9 +689,6 @@ class MainWindow(QMainWindow):
             self.render_button.clicked.connect(self.runRenderCommand)
             for widget in self._widgets_to_disable_during_render:
                 widget.setEnabled(True)
-            self.showAnimationOptions(self.is_animation.checkState())
-            self.canDisplayRenderApi(self.renderer.currentIndex())
-            self.canDisplayCpuOption(self.render_api.currentIndex())
 
     
 
