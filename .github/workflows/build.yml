@@ -1,0 +1,39 @@
+name: Build and Release EXE
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install Nuitka and Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with Nuitka
+        run: |
+          nuitka app.py --standalone --enable-plugin=pyqt6 --include-data-dir=resources=resources --windows-disable-console --windows-icon-from-ico=nabesaka_icon.png --output-dir=build
+
+      - name: Zip Build Folder
+        run: |
+          Compress-Archive -Path build\app.dist\* -DestinationPath build.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
