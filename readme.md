@@ -5,7 +5,9 @@ A small portable application to launch Blender in 'headless' mode for rendering 
 
 ## IMPORTANT
 
-Swapped to Nuitka to hopefully prevent issues with anti-virus flagging. It doesn't get flagged on my PC by Windows Defender or Bitdefender, but some still seem flag it. I don't have the money to sign such a small app so you can download the release or clone this repo and `pip install -r requirements.txt` and then `python app.py`.
+Swapped to Nuitka to hopefully prevent issues with anti-virus flagging. Still seems to be getting flagged a lot. You can check the source code in this repo. The bat file shows how I build the exe, you can build your own if you want. I don't have the money to sign such a small app so you can download the release or clone this repo and `pip install -r requirements.txt` and then `python app.py`.
+
+As always I encourage you to build from source if you want to be sure. I will continue to work on building in a way that does not get flagged but I simply can't afford to pay for EXE signing for such a small project.
 
 ## Installation
 
@@ -35,4 +37,6 @@ Grab from the releases page and place somewhere memorable. The app is portable a
     - Add Final Completion Time Estimation for animation rendering
     - Change Render button to Cancel button while rendering
     - Lock fields when rendering
-    - Code improvements 
+    - Code improvements
+- v0.2.2
+    - Fixed an issue with 'Is Animation' being reset after a render is cancelled or finished.
