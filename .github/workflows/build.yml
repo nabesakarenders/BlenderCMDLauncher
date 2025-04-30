@@ -7,6 +7,7 @@ on:
 
 jobs:
   build:
+    permissions: write-all
     runs-on: windows-latest
 
     steps:
@@ -25,7 +26,7 @@ jobs:
 
       - name: Build with Nuitka
         run: |
-          nuitka app.py --standalone --enable-plugin=pyqt6 --include-data-dir=resources=resources --windows-disable-console --windows-icon-from-ico=nabesaka_icon.png --output-dir=build
+          nuitka app.py --standalone --enable-plugin=pyqt6 --include-data-dir=resources=resources --windows-console-mode=disable --windows-icon-from-ico=nabesaka_icon.png --output-dir=build
 
       - name: Zip Build Folder
         run: |
